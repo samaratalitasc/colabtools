@@ -14,6 +14,7 @@
 """Colab-specific shell customizations."""
 
 import datetime
+import logging
 import os
 import pathlib
 import sys
@@ -238,6 +239,44 @@ class Shell(zmqshell.ZMQInteractiveShell):
     # Nothing helped, fall back.
     return getattr(obj, attrname)
 
+  def object_inspect_text(self, oname, detail_level=0):
+    """Get object info as formatted text."""
+    info = self._ofind(oname)
+    if info['found']:
+      logging.warning('object_inspect_text: found')
+      try:
+        info = self._object_find(oname)
+        # We need to avoid arbitrary python objects remaining in info (and
+        # potentially being serialized below); `obj` itself needs to be
+        # removed, but retained for use below, and `parent` isn't used at all.
+        obj = info.pop('obj', '')
+        info.pop('parent', '')
+        # Follow the InteractiveShell base class implementation and call
+        # directly into the inspector's _get_info method.
+        # pylint: disable=protected-access
+        logging.warning(
+            'object_inspect_text: calling inspector._get_info on: %s', obj
+        )
+        result = self.inspector._get_info(
+            obj,
+            oname,
+            info=info,
+            detail_level=detail_level,
+        )
+        logging.warning('object_inspect_text: result: %s', result)
+      except Exception as e:  # pylint: disable=broad-except
+        self.kernel.log.info(
+            'Exception caught during object text inspection: '
+            '{!r}\nTraceback:\n{}'.format(
+                e, ''.join(traceback.format_tb(sys.exc_info()[2]))
+            )
+        )
+        return ''
+    else:
+      return ''
+    logging.warning('object_inspect_text result: %s', result)
+    return result['text/plain']
+
   def object_inspect(self, oname, detail_level=0):
     info = self._ofind(oname)
 
@@ -259,7 +298,7 @@ class Shell(zmqshell.ZMQInteractiveShell):
                 e, ''.join(traceback.format_tb(sys.exc_info()[2]))
             )
         )
-        result = oinspect.InfoDict()
+        result = oinspect.object_info()
     else:
       result = super(Shell, self).object_inspect(
           oname, detail_level=detail_level

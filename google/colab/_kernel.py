@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Colab-specific kernel customizations."""
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
 
 from google.colab import _shell
 from google.colab import _shell_customizations
@@ -29,9 +32,25 @@ class Kernel(ipkernel.IPythonKernel):
   def do_inspect(self, code, cursor_pos, detail_level=0, *args, **kwargs):
     name = tokenutil.token_at_cursor(code, cursor_pos)
     info = self.shell.object_inspect(name)
+    logging.warning('do_inspect: %s', name)
 
     data = {}
     if info['found']:
+      logging.warning('do_inspect found: %s', name)
+      info_text = self.shell.object_inspect_text(
+          name, detail_level=detail_level
+      )
+      # Only include info_text if less than 1 MiB. We have seen frontend lockup
+      # issues when this is very large. See b/401357469 for more details.
+      # 1 MiB is chosen as an arbitary starting point.
+      if len(info_text) < 2**20:
+        logging.warning('do_inspect adding text/plain: %s', info_text)
+        data['text/plain'] = info_text
+      else:
+        logging.warning(
+            'do_inspect text/plain is too large: %s', len(info_text)
+        )
+
       # Provide the structured inspection information to allow the frontend to
       # format as desired.
       argspec = info.get('argspec')
@@ -51,7 +70,7 @@ class Kernel(ipkernel.IPythonKernel):
         'metadata': {},
         'found': info['found'],
     }
-
+    logging.warning('do_inspect: data mimes: %s', ', '.join(data.keys()))
     return reply_content
 
   def complete_request(self, stream, ident, parent):
